@@ -3,6 +3,17 @@ from random import shuffle, randint, uniform
 from typing import List, Optional
 
 
+def _get_pop_sample(actual_pop_size, population, two_kids=None):
+    w1 = randint(0, actual_pop_size - 1)
+    c1 = population[w1].copy()
+    if two_kids:
+        w2 = randint(0, actual_pop_size - 1)
+        c2 = population[w2].copy()
+        return c1, c2
+    else:
+        return c1
+
+
 def _transform(problem_grid: List[List]) -> List[List]:
     """
     Transforms the problem_grid passed, testing the sudoku has three main comparisons.
@@ -12,8 +23,8 @@ def _transform(problem_grid: List[List]) -> List[List]:
         3. All 3x3 squares must have each number from 1 to 9 with no repetition
     These last conditions are assuming we have a 9x9 grid with 81 numbers in total.
 
-    To be able to easily check for rows, columns and squares, we transform the grid, to convert each 3x3 square to a 1x9 row.
-    These way in the untransformed version we check rows and columns
+    To be able to easily check for rows, columns and squares, we transform the grid, to convert each 3x3
+    square to a 1x9 row. These way in the untransformed version we check rows and columns
     In the transformed version we check rows, and now we have checked every condition.
     Parameters:
     - problem_grid (list): Sudoku grid (Transformed or Untransformed).
@@ -21,10 +32,10 @@ def _transform(problem_grid: List[List]) -> List[List]:
     - transformed grid .
         If problem_grid is the original sudoku it converts it
         If the problem_grid is the already transformed sudoku, it unrolls it
-    """  # noqa: E501
+    """
     file_lines = problem_grid
     problem_grid = [[] for _ in range(len(file_lines))]  # Empty grid
-    sqrt_n = 3  # this parameter could change if one wants to generalize for sudokus of other dimensions # noqa: E501
+    sqrt_n = 3  # this parameter could change if one wants to generalize for sudokus of other dimensions
     for j in range(len(file_lines)):
         line_values = [(int(value) if value != 0 else None)
                        for value in file_lines[j]]
@@ -32,16 +43,26 @@ def _transform(problem_grid: List[List]) -> List[List]:
             problem_grid[
                 int(i / sqrt_n) +
                 int(j / sqrt_n) * sqrt_n
-                ].append(line_values[i])
+            ].append(line_values[i])
     return problem_grid
 
 
 class Sudoku:
     def __init__(self,
-                 grid: List[List]):
+                 grid: List[List],
+                 inter_change: Optional[str] = "square",
+                 ):
         self.grid = grid
         self.grid_length = len(self.grid)
-        self.problem_grid = self._deep_copy_grid(_transform(self.grid))
+        self.inter_change = inter_change
+        if inter_change == "row":
+            self.problem_grid = self._deep_copy_grid(
+                [[None if i == 0 else i for i in row] for row in self.grid])
+        elif inter_change == "column":
+            self.problem_grid = self._deep_copy_grid(np.transpose(
+                [[None if i == 0 else i for i in row] for row in self.grid]))
+        else:  # square interchanging
+            self.problem_grid = self._deep_copy_grid(_transform(self.grid))
 
     def _empty_grid(self,
                     elem_generator: List[List] | None = None) -> List[List]:
@@ -50,7 +71,7 @@ class Sudoku:
         Parameters:
         - elem_generator (function) (optional=None): Is is used to generate initial values of the grid's elements.
                 If it's not given, all grid's elements will be "None".
-        """  # noqa: E501
+        """
         return [
             [
                 (None if elem_generator is None else elem_generator(i, j))
@@ -68,7 +89,7 @@ class Sudoku:
         By deep copying an empty grid we make sure, the original grid is not modified.
         Parameters:
             - grid (list)
-        """  # noqa: E501
+        """
         return self._empty_grid(lambda i, j: grid[i][j])
 
     def _fitness(self,
@@ -80,9 +101,14 @@ class Sudoku:
         Parameters:
             - grid (list)
         Returns (int): The value of the fitness function for the input grid.
-        """  # noqa: E501
+        """
         grid = np.array(grid)
-        grid_2 = _transform(grid)
+        if self.inter_change == "row":
+            grid_2 = np.array(grid)
+        elif self.inter_change == "column":
+            grid_2 = np.array(np.transpose(grid))
+        else:  # square interchanging
+            grid_2 = _transform(grid)
 
         # COUNT HOW MANY REPEATED NUMBERS
         row = np.sum(9 - np.array([len(np.unique(r)) for r in grid_2]))
@@ -136,7 +162,7 @@ class Sudoku:
           - ordered candidates (list)
           - fitness of the first candidate (int)
           - fitness of the last candidate (int)
-        """  # noqa: E501
+        """
         index_fitness = []
         for i in range(len(candidates)):
             index_fitness.append(tuple([i, self._fitness(candidates[i])]))
@@ -151,10 +177,10 @@ class Sudoku:
 
     def solve(self,
               population_size: Optional[int] = 10000,
-              selection_rate: Optional[float] = 0.8,
+              selection_rate: Optional[float] = 0.1,
               max_generations_count: Optional[int] = 100,
-              mutation_rate: Optional[float] = 0.4,
-              random_proportion: Optional[float] = 0.5,
+              mutation_rate: Optional[float] = 0.6,
+              random_proportion: Optional[float] = 0.1,
               verbose: Optional[bool] = False,
               cross_over: Optional[str] = "best candidate",
               ):
@@ -165,7 +191,8 @@ class Sudoku:
         self.random_proportion = random_proportion
         """
         Solves a Sudoku puzzle using a genetic algorithm.
-        It receives a problem grid written in different lines (Not one line with 81 numbers) and in the empty spaces, a 0 should appear
+        It receives a problem grid written in different lines (Not one line with 81 numbers) and in the empty spaces,
+        a 0 should appear
         In the "reading sudoku" chapter there is an example of how the initial sudoku should be formatted.
 
         Parameters:
@@ -178,7 +205,7 @@ class Sudoku:
             - population[0] (list): Solved sudoku.
             - best_fitness (int): last best_fitness, when not solved in the max_generations it gets the last one.
             - fitness_history (list): For plotting progress of learning
-        """  # noqa: E501
+        """
 
         population = self._generate_initial_population(population_size)
         best_fitness = 100  # initializing value with an improbable value
@@ -188,7 +215,8 @@ class Sudoku:
              best_fitness,
              worst_fitness) = self._selection(population, self.selection_rate)
             if best_fitness == 0:
-                print(f"Generation {i} -Best candidate's fitness {best_fitness} -Worst candidate's fitness {worst_fitness}")  # noqa: E501
+                print(f"Generation {i} -Best candidate's fitness {best_fitness}"
+                      f" -Worst candidate's fitness {worst_fitness}")
                 break
             actual_pop_size = len(population)
             new_population_size = int((population_size - actual_pop_size)
@@ -197,38 +225,76 @@ class Sudoku:
                                          * random_proportion)
             new_population = []
             # Cross-over
+            # Random cross-over
             if cross_over == "best candidate":
                 for _ in range(new_population_size):
-                    # Selecting two random candidates
-                    w1 = randint(0, actual_pop_size - 1)
-                    w2 = randint(0, actual_pop_size - 1)
-                    c1 = population[w1].copy()  # Copy to not modify original list  # noqa: E501
-                    c2 = population[w2].copy()
-
-                    # Random cross-over
                     cross_point = randint(0, 8)
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
                     temp = c2[cross_point]
                     c1[cross_point] = c2[cross_point]
                     c2[cross_point] = temp
-
                     if self._fitness(c1) < self._fitness(c2):
                         new_population.append(c1)
                     else:
                         new_population.append(c2)
-            elif cross_over == "random candidate":
+            # one-opt cross
+            elif cross_over == "one-point cross-over":
                 for _ in range(new_population_size):
-                    # Selecting two random candidates
-                    w1 = randint(0, actual_pop_size - 1)
-                    w2 = randint(0, actual_pop_size - 1)
-                    c1 = population[w1].copy()
-                    c2 = population[w2].copy()
-
-                    # Random cross-over
-                    cross_point = randint(2, 8)
+                    cross_point = randint(0, 8)
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
                     temp = list(c1[:cross_point]) + list(c2[cross_point:])
                     new_population.append(temp)
+            # insertion
+            elif cross_over == "insertion":
+                for _ in range(new_population_size):
+                    cross_point = randint(0, 8)
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
+                    temp = list(
+                        c1[:cross_point]) + [list(c2[cross_point])] + list(c1[cross_point + 1:])
+                    new_population.append(temp)
+            # swap
+            elif cross_over == "swap":
+                for _ in range(new_population_size):
+                    cross_point = randint(0, 8)
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
+                    c1[cross_point] = c2[cross_point]
+                    new_population.append(c1)
+            # matrix-random
+            elif cross_over == "matrix-random":
+                for _ in range(new_population_size):
+                    cross_point = randint(0, 8)
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
+                    x = np.array([uniform(0, 1)
+                                 for _ in range(9*9*9)]).reshape(9, 9, 9)
+                    temp = self._empty_grid()
+                    for i in range(9):
+                        for j in range(9):
+                            if self.problem_grid[i][j] is not None:
+                                temp[i][j] = self.problem_grid[i][j]
+                            else:
+                                temp[i][j] = np.argmin(x[i, j]) + 1
+                    new_population.append(temp)
+            # matrix-random pairs
+            elif cross_over == "matrix-random-pairs":
+                for _ in range(new_population_size):
+                    c1, c2 = _get_pop_sample(actual_pop_size, population, True)
+                    x = np.array([uniform(0, 1)
+                                 for _ in range(9*9*9)]).reshape(9, 9, 9)
+                    temp = self._empty_grid()
+                    for i in range(9):
+                        for j in range(9):
+                            cross_point = randint(0, 8)
+                            if self.problem_grid[i][j] is not None:
+                                temp[i][j] = self.problem_grid[i][j]
+                            else:
+                                if x[i][j][cross_point] >= 0.5:
+                                    temp[i][j] = c1[i][j]
+                                else:
+                                    temp[i][j] = c2[i][j]
+                    new_population.append(temp)
 
-            random_population = self._generate_initial_population(random_population_size)  # noqa: E501
+            random_population = self._generate_initial_population(
+                random_population_size)
 
             # Mutation
             for candidate in new_population:
@@ -236,27 +302,45 @@ class Sudoku:
                     random_sub_grid = randint(0, 8)
                     possible_swaps = []
                     for grid_element_index in range(self.grid_length):
-                        if self.problem_grid[random_sub_grid][grid_element_index] is None:  # noqa: E501
+                        if self.problem_grid[random_sub_grid][grid_element_index] is None:
                             possible_swaps.append(grid_element_index)
                     if len(possible_swaps) > 1:
                         shuffle(possible_swaps)
                         first_index = possible_swaps.pop()
                         second_index = possible_swaps.pop()
                         tmp = candidate[random_sub_grid][first_index]
-                        candidate[random_sub_grid][first_index] = candidate[random_sub_grid][second_index]  # noqa: E501
+                        candidate[random_sub_grid][first_index] = candidate[random_sub_grid][second_index]
                         candidate[random_sub_grid][second_index] = tmp
 
             new_population = np.append(new_population, random_population, 0)
             population = np.append(population, new_population, 0)
             fitness_history.append(best_fitness)
-            if verbose:   # This is used to see progress in console of the solving # noqa: E501
-                print(f"Generation {i} -Best candidate's fitness {best_fitness} -Worst candidate's fitness {worst_fitness}")  # noqa: E501
+            if verbose:   # This is used to see progress in console of the solving
+                print(f"Generation {i} -Best candidate's fitness {best_fitness}"
+                      f" -Worst candidate's fitness {worst_fitness}")
 
             # Resetting if local minimum
-            if len(fitness_history) > 60 and len(np.unique(fitness_history[-49:])) == 1:  # noqa: E501
+            if len(fitness_history) > 60 and len(np.unique(fitness_history[-49:])) == 1:
                 print(population[0])
-                population = self._generate_initial_population(population_size)  # Reset  # noqa: E501
+                population = self._generate_initial_population(
+                    population_size)  # Reset
         (population,
          best_fitness,
          worst_fitness) = self._selection(population, self.selection_rate)
         return population[0], best_fitness, fitness_history
+
+
+if __name__ == "__main__":
+    s = [[0, 0, 4, 3, 0, 0, 2, 0, 9],
+         [0, 0, 5, 0, 0, 9, 0, 0, 1],
+         [0, 7, 0, 0, 6, 0, 0, 4, 3],
+         [0, 0, 6, 0, 0, 2, 0, 8, 7],
+         [1, 9, 0, 0, 0, 7, 4, 0, 0],
+         [0, 5, 0, 0, 8, 3, 0, 0, 0],
+         [6, 0, 0, 0, 0, 0, 1, 0, 5],
+         [0, 0, 3, 5, 0, 8, 6, 9, 0],
+         [0, 4, 2, 9, 1, 0, 3, 0, 0]]
+    solver = Sudoku(s)
+    sol, ftns, ftns_history = solver.solve(cross_over="matrix-random")
+    print(ftns)
+    print(len(ftns_history))
